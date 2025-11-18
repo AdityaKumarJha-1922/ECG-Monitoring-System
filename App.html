@@ -10,6 +10,50 @@
 <body>
 
   <div style="color:rgba(0, 0, 0, 0.678)">
+    <h1 style="text-align: center; color: #0066cc;">ECG Heart Rate Monitor</h1>
+
+    <!-- Real-Time Heart Rate Monitoring Section -->
+    <div id="heartRateMonitor" style="background: white; padding: 20px; margin: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+      <h2 style="text-align: center; color: #333;">Real-Time Heart Rate Monitoring</h2>
+
+      <div style="text-align: center; margin: 20px 0;">
+        <div id="heartRateDisplay" style="font-size: 48px; font-weight: bold; color: #0066cc; margin: 10px 0;">
+          -- BPM
+        </div>
+        <div id="heartRateStatus" style="font-size: 24px; padding: 10px 20px; border-radius: 5px; display: inline-block; margin: 10px 0; background-color: #f0f0f0;">
+          Calculating...
+        </div>
+      </div>
+
+      <div style="margin: 20px 0; padding: 15px; background: #f9f9f9; border-radius: 5px;">
+        <h3 style="color: #333; margin-bottom: 10px;">Heart Rate Reference:</h3>
+        <div style="text-align: left; padding-left: 20px;">
+          <p style="margin: 5px 0;"><span style="color: #4CAF50; font-weight: bold;">✓ Normal:</span> 60-100 BPM (Adults at rest)</p>
+          <p style="margin: 5px 0;"><span style="color: #FFA500; font-weight: bold;">⚠ Low (Bradycardia):</span> 40-60 BPM</p>
+          <p style="margin: 5px 0;"><span style="color: #FFA500; font-weight: bold;">⚠ High (Tachycardia):</span> 100-150 BPM</p>
+          <p style="margin: 5px 0;"><span style="color: #f44336; font-weight: bold;">✗ Very Low:</span> Below 40 BPM</p>
+          <p style="margin: 5px 0;"><span style="color: #f44336; font-weight: bold;">✗ Very High:</span> Above 150 BPM</p>
+        </div>
+      </div>
+
+      <div style="margin: 20px 0; padding: 15px; background: #e3f2fd; border-radius: 5px; border-left: 4px solid #0066cc;">
+        <h4 style="color: #0066cc; margin-top: 0;">How to use:</h4>
+        <ol style="text-align: left; padding-left: 30px; margin: 10px 0;">
+          <li>Connect your ESP32 device with AD8232 ECG sensor</li>
+          <li>View real-time heart rate data on Ubidots dashboard</li>
+          <li>The device automatically calculates heart rate and determines if it's normal</li>
+          <li>Heart rate status is updated every 0.5 seconds</li>
+        </ol>
+        <p style="margin: 10px 0; font-size: 12px; color: #666;">
+          <strong>Note:</strong> To view real-time data from your ESP32 device, please access your Ubidots dashboard at
+          <a href="https://industrial.ubidots.com" target="_blank" style="color: #0066cc;">industrial.ubidots.com</a>
+        </p>
+      </div>
+    </div>
+
+    <hr style="margin: 30px 0; border: 1px solid #ccc;">
+
+    <!-- Patient Information Form -->
     <form onsubmit="onsub" method="post">
       <h3>Name</h3><input class="input-text" id="name" name="name" required="required">
       <h3>Gender:</h3><select name="Gender_Type" class="input-text" id="gender" required="required">
@@ -20,7 +64,7 @@
       </select>
       <h3>Age</h3><input class="input-text" id="name" type="number" name="name" required="required">
 
-      <h2>Predictive analysis</h2>
+      <h2>Manual ECG Analysis</h2>
       <h3>Enter ECG Sensor data:</h3>
 1. <input id="first" class="input-text-5" step="0.01" min="0.0" max="1.0" name="Year" type="number">
 2. <input id="second" class="input-text-5" step="0.01" min="0.0" max="1.0" name="Year" type="number"><br>
@@ -35,6 +79,42 @@
 <h3 id="output"></h3>
 
 <script>
+  // Function to update heart rate display with status styling
+  function updateHeartRateDisplay(heartRate, status) {
+    const heartRateDisplay = document.getElementById('heartRateDisplay');
+    const heartRateStatus = document.getElementById('heartRateStatus');
+
+    // Update heart rate value
+    if (heartRate && heartRate > 0) {
+      heartRateDisplay.textContent = Math.round(heartRate) + ' BPM';
+    } else {
+      heartRateDisplay.textContent = '-- BPM';
+    }
+
+    // Update status with appropriate color coding
+    heartRateStatus.textContent = status;
+
+    // Color coding based on status
+    if (status === 'Normal') {
+      heartRateStatus.style.backgroundColor = '#4CAF50';
+      heartRateStatus.style.color = 'white';
+      heartRateDisplay.style.color = '#4CAF50';
+    } else if (status === 'Low (Bradycardia)' || status === 'High (Tachycardia)') {
+      heartRateStatus.style.backgroundColor = '#FFA500';
+      heartRateStatus.style.color = 'white';
+      heartRateDisplay.style.color = '#FFA500';
+    } else if (status === 'Very Low' || status === 'Very High') {
+      heartRateStatus.style.backgroundColor = '#f44336';
+      heartRateStatus.style.color = 'white';
+      heartRateDisplay.style.color = '#f44336';
+    } else {
+      heartRateStatus.style.backgroundColor = '#f0f0f0';
+      heartRateStatus.style.color = '#333';
+      heartRateDisplay.style.color = '#0066cc';
+    }
+  }
+
+  // Manual ECG analysis function
   function checkValues() {
     const inputElements = document.querySelectorAll('.input-text-5');
     const outputElement = document.getElementById('output');
@@ -51,8 +131,10 @@
 
     if (allGreaterThan0_5) {
       outputElement.textContent = 'Normal Heart Beat';
+      outputElement.style.color = '#4CAF50';
     } else {
       outputElement.textContent = 'Abnormal Heart Beat';
+      outputElement.style.color = '#f44336';
     }
   }
 
@@ -60,6 +142,32 @@
     event.preventDefault();
     checkValues();
   });
+
+  // Example: Simulate real-time data (replace with actual Ubidots API integration)
+  // Uncomment and modify below code to connect with Ubidots API
+  /*
+  function fetchHeartRateData() {
+    // Replace with your Ubidots API endpoint and token
+    const UBIDOTS_TOKEN = 'YOUR_TOKEN_HERE';
+    const DEVICE_LABEL = 'esp32';
+
+    fetch(`https://industrial.api.ubidots.com/api/v1.6/devices/${DEVICE_LABEL}`, {
+      headers: {
+        'X-Auth-Token': UBIDOTS_TOKEN
+      }
+    })
+    .then(response => response.json())
+    .then(data => {
+      const heartRate = data.heart_rate?.value || 0;
+      const status = data.hr_status?.value || 'Calculating...';
+      updateHeartRateDisplay(heartRate, status);
+    })
+    .catch(error => console.error('Error fetching data:', error));
+  }
+
+  // Fetch data every 2 seconds
+  setInterval(fetchHeartRateData, 2000);
+  */
 </script>
 
       

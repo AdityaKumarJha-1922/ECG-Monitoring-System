@@ -16,10 +16,28 @@
 #define SENSOR A0 // Set the A0 as SENSOR
  
 char mqttBroker[]  = "industrial.api.ubidots.com";
-char payload[100];
+char payload[200];
 char topic[150];
 // Space to store values to send
 char str_sensor[10];
+char str_heartRate[10];
+char str_status[20];
+
+/****************************************
+ * Heart Rate Detection Variables
+ ****************************************/
+#define THRESHOLD 2000 // Threshold for peak detection (adjust based on your sensor)
+#define SAMPLE_WINDOW 20000 // 20 seconds window for heart rate calculation (ms)
+#define MIN_PEAK_DISTANCE 300 // Minimum distance between peaks (ms) - prevents double counting
+
+unsigned long lastBeatTime = 0;
+unsigned long beatTimes[10]; // Store last 10 beat timestamps
+int beatIndex = 0;
+int beatCount = 0;
+float heartRate = 0;
+bool isPeakDetected = false;
+int lastSensorValue = 0;
+String heartRateStatus = "Calculating...";
  
 /****************************************
  * Auxiliar Functions
@@ -54,6 +72,76 @@ void reconnect() {
 }
  
 /****************************************
+ * Heart Rate Detection Functions
+ ****************************************/
+void detectHeartRate(float sensorValue) {
+  unsigned long currentTime = millis();
+
+  // Peak detection: looking for signal crossing above threshold
+  if (sensorValue > THRESHOLD && lastSensorValue <= THRESHOLD && !isPeakDetected) {
+    // Check if enough time has passed since last beat (avoid double counting)
+    if (currentTime - lastBeatTime > MIN_PEAK_DISTANCE) {
+      // Store beat time
+      beatTimes[beatIndex] = currentTime;
+      beatIndex = (beatIndex + 1) % 10;
+
+      if (beatCount < 10) {
+        beatCount++;
+      }
+
+      lastBeatTime = currentTime;
+      isPeakDetected = true;
+
+      // Calculate heart rate if we have enough beats
+      if (beatCount >= 2) {
+        // Calculate average time between beats
+        unsigned long totalInterval = 0;
+        int intervals = 0;
+
+        for (int i = 1; i < beatCount; i++) {
+          int prevIndex = (beatIndex - i - 1 + 10) % 10;
+          int currIndex = (beatIndex - i + 10) % 10;
+
+          if (beatTimes[currIndex] > beatTimes[prevIndex]) {
+            totalInterval += (beatTimes[currIndex] - beatTimes[prevIndex]);
+            intervals++;
+          }
+        }
+
+        if (intervals > 0) {
+          float avgInterval = totalInterval / (float)intervals;
+          heartRate = 60000.0 / avgInterval; // Convert ms to BPM
+
+          // Classify heart rate as normal or abnormal
+          // Normal adult resting heart rate: 60-100 BPM
+          // Athletes: 40-60 BPM
+          // Children: up to 120 BPM
+          // Using 60-100 BPM as normal range for adults
+
+          if (heartRate >= 60 && heartRate <= 100) {
+            heartRateStatus = "Normal";
+          } else if (heartRate < 60 && heartRate > 40) {
+            heartRateStatus = "Low (Bradycardia)";
+          } else if (heartRate > 100 && heartRate < 150) {
+            heartRateStatus = "High (Tachycardia)";
+          } else if (heartRate <= 40) {
+            heartRateStatus = "Very Low";
+          } else if (heartRate >= 150) {
+            heartRateStatus = "Very High";
+          } else {
+            heartRateStatus = "Abnormal";
+          }
+        }
+      }
+    }
+  } else if (sensorValue <= THRESHOLD) {
+    isPeakDetected = false;
+  }
+
+  lastSensorValue = sensorValue;
+}
+
+/****************************************
  * Main Functions
  ****************************************/
 void setup() {
@@ -85,15 +173,27 @@ void loop() {
  
   sprintf(topic, "%s%s", "/v1.6/devices/", DEVICE_LABEL);
   sprintf(payload, "%s", ""); // Cleans the payload
-  sprintf(payload, "{\"%s\":", VARIABLE_LABEL); // Adds the variable label
-  
-  float sensor = analogRead(SENSOR); 
-  
+
+  float sensor = analogRead(SENSOR);
+
+  // Detect heart rate from ECG signal
+  detectHeartRate(sensor);
+
   /* 4 is mininum width, 2 is precision; float value is copied onto str_sensor*/
   dtostrf(sensor, 4, 2, str_sensor);
-  
-  sprintf(payload, "%s {\"value\": %s}}", payload, str_sensor); // Adds the value
+  dtostrf(heartRate, 4, 2, str_heartRate);
+  heartRateStatus.toCharArray(str_status, 20);
+
+  // Build JSON payload with sensor value, heart rate, and status
+  sprintf(payload, "{\"%s\": {\"value\": %s}, \"heart_rate\": {\"value\": %s}, \"hr_status\": {\"value\": \"%s\"}}",
+          VARIABLE_LABEL, str_sensor, str_heartRate, str_status);
+
   Serial.println("Publishing data to Ubidots Cloud");
+  Serial.print("Heart Rate: ");
+  Serial.print(heartRate);
+  Serial.print(" BPM - Status: ");
+  Serial.println(heartRateStatus);
+
   client.publish(topic, payload);
   client.loop();
   delay(500);
